@@ -1,6 +1,7 @@
 # Note taking app
 
 ![Icon](images/icon.png)
+
 Real-time lecture note-taking app powered by speech recognition and summarization.
 
 Classnote listens to live speech, transcribes it in real time, and generates concise summaries — perfect for lectures, meetings, and brainstorming sessions.
