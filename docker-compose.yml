@@ -1,0 +1,55 @@
+version: "3.9"
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: lecture_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    volumes:
+     - rabbitmq_data:/var/lib/rabbitmq
+
+  app:
+    build:
+      context: .
+      target: app
+      dockerfile: Dockerfile
+    container_name: lecture_app
+    env_file: .env
+    volumes:
+      - ./audios:/app/audios
+      - ./app/templates:/app/templates
+    ports:
+      - "8000:8000"
+    depends_on:
+      - rabbitmq
+    restart: always
+    
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_HOST=rabbitmq
+
+  worker:
+    build:
+      context: .
+      target: worker
+      dockerfile: Dockerfile
+    container_name: lecture_worker
+    gpus: all
+    env_file: .env
+    volumes:
+      - ./audios:/worker/audios
+      - hf_cache:/root/.cache/huggingface
+    depends_on:
+      - rabbitmq
+    restart: always
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+
+volumes:
+  rabbitmq_data:
+  hf_cache:

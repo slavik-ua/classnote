@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Recorder</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        .top-bar {
+            background: #007BFF;
+            color: white;
+            text-align: center;
+            padding: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            background: white;
+            border-radius: 5px;
+        }
+        #response {
+            flex: 1;
+            overflow-y: auto;
+            background: #f0f0f0;
+            padding: 20px;
+        }
+        .bottom-bar {
+            padding: 10px;
+            background: #ddd;
+        }
+        #DEBUG {
+            width: 100%;
+            height: 120px;
+            font-size: 16px;
+            line-height: normal;
+            vertical-align: top;
+        }
+        .markdown-container {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <button id="recordButton">Start Recording</button>
+    </div>
+    <div id="response"></div>
+    <div class="bottom-bar">
+        <textarea id="DEBUG">
+            Reduce data sent
+            Optimize battery usage
+            List of recordings if needed
+            New message indicator
+            Note tagging
+        </textarea>
+    </div>
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let recording = false;
+        let stream;
+        let file_ids = [];
+        let DEBUG = document.getElementById("DEBUG");
+
+        document.getElementById("recordButton").addEventListener("click", async () => {
+            if (!recording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
+
+        function send_DEBUG(message) {
+            DEBUG.value += `${message}\n`;
+            DEBUG.scrollTop = DEBUG.scrollHeight;
+        }
+
+        async function startRecording() {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            recording = true;
+            document.getElementById("recordButton").innerText = "Stop Recording";
+            recordChunk();
+            file_ids.length = 0;
+            sendRequests();
+        }
+
+        async function recordChunk() {
+            if (!recording) return;
+            
+            audioChunks = [];
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.start();
+            setTimeout(async () => {
+                if (!recording) return;
+                mediaRecorder.stop();
+                await new Promise(resolve => mediaRecorder.onstop = resolve);
+                await sendAudio();
+                recordChunk(); // Start recording next chunk after sending
+            }, 25000);
+            console.log("RECORD CHUNK");
+            send_DEBUG("RECORD CHUNK");
+        }
+
+        async function sendAudio() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const formData = new FormData();
+            formData.append("file", audioBlob, "recording.wav");
+
+            try {
+                const response = await fetch(`${window.location.href}upload`, {
+                    method: "POST",
+                    body: formData
+                });
+                const file_id = await response.text();
+                file_ids.push(file_id.slice(1, -1));
+                console.log("FILE_IDS: ", file_ids);
+                send_DEBUG(`FILE_IDS: ${file_ids}`);
+            } catch (error) {
+                document.getElementById("response").innerText += "Error sending audio.";
+                console.error(error);
+                send_DEBUG(`${error}`);
+            }
+
+            console.log("SENT");
+            send_DEBUG("Sent");
+        }
+
+        function stopRecording() {
+            recording = false;
+            mediaRecorder.stop();
+            stream.getTracks().forEach(track => track.stop());
+            document.getElementById("recordButton").innerText = "Start Recording";
+        }
+
+        async function sendRequests() {
+            while (recording || file_ids.length !== 0) {
+                if (file_ids.length === 0) {
+                    console.log("No items");
+                    send_DEBUG("No items");
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+
+                const param = file_ids[0];
+                try {
+                    const response = await fetch(`${window.location.href}get-summary/${param}`);
+
+                    if (response.ok) {
+                        const data = await response.json()
+                        if (data !== null) {
+                            file_ids.shift();
+                            console.log("Data: ", data);
+                            send_DEBUG(`Data: ${data}`);
+                            document.getElementById("response").innerHTML += marked.parse(data.summary) + "<hr />";
+                        } else {
+                            console.log("RECEIVED NULL");
+                            send_DEBUG("RECEIVED NULL" + "||" + file_ids);
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                    } else {
+                        console.log(`Error for ${param} ${error}`, response.status);
+                        send_DEBUG(`Error for ${param} ${error} ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error(`Error for ${param}`, error);
+                    send_DEBUG(`Error for ${param} ${error}`);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
