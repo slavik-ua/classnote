@@ -13,3 +13,4 @@ wheels/
 audios/
 llm_prompt.md
 *.log
+.ruff_cache
